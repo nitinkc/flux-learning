@@ -1,0 +1,33 @@
+# Reusable: package — lint and package the Helm chart, upload the .tgz
+# as an artifact for the deploy stage. Port of .gitlab/ci/package-chart.yml.
+
+name: reusable-package
+
+on:
+  workflow_call:
+    inputs:
+      chart-dir:
+        required: true
+        type: string
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # image: alpine/helm:3.16.3 → setup-helm on the runner
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - run: helm lint "${{ inputs.chart-dir }}" --set image.repository=test/app,image.tag=test
+
+      - run: helm package "${{ inputs.chart-dir }}" --destination dist
+
+      # artifacts:paths dist/*.tgz, expire_in: 1 week
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chart-tgz
+          path: dist/*.tgz
+          retention-days: 7

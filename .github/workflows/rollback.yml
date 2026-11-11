@@ -1,0 +1,30 @@
+# rollback:prod — port of the always-available manual rollback job in
+# .gitlab/ci/deploy.yml.
+#
+# GitHub has no `when: manual` button inside a pipeline; a separate
+# workflow_dispatch workflow is the idiomatic equivalent — run it on
+# demand from the Actions tab. It still sits behind the prod
+# environment's protection rules, so prod approvals apply here too.
+
+name: rollback
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: prod
+    concurrency: prod  # resource_group: prod — never overlaps a prod deploy
+    steps:
+      - uses: azure/setup-helm@v4
+
+      - run: |
+          mkdir -p ~/.kube
+          echo "${KUBECONFIG_DATA}" | base64 -d > ~/.kube/config
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_DATA }}
+
+      - run: helm history spring-app --namespace prod
+
+      - run: helm rollback spring-app --namespace prod --wait

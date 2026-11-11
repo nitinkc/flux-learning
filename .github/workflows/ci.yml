@@ -1,0 +1,168 @@
+# spring-app pipeline — test → build → security → package → deploy
+#
+# GitHub Actions port of .gitlab-ci.yml. Each .gitlab/ci/*.yml stage file
+# maps to a `workflow_call` reusable workflow — GitHub's include:
+# equivalent. Read docs/08-gitlab-to-github-actions.md for the full
+# concept mapping.
+
+name: ci
+
+on:
+  # merge_request_event pipelines → pull_request. GitHub checks out the
+  # merged result by default, same as GitLab merged-results pipelines.
+  pull_request:
+  # Branch/tag pipelines → push. GitLab's "skip branch pipeline when an
+  # MR is open" dedup rule has no native equivalent; restricting push to
+  # the default branch is the idiomatic way to avoid double runs on PR
+  # branches. Add '**' if you want pipelines on un-PR'd feature branches.
+  push:
+    branches: [main]
+    tags: ['v*']
+
+env:
+  APP_DIR: app
+  CHART_DIR: chart/spring-app
+  # CI_REGISTRY_IMAGE/spring-app → ghcr.io/<owner>/<repo>/spring-app
+  # (GHCR accepts multi-segment names). github.sha is the full SHA;
+  # GitLab used CI_COMMIT_SHORT_SHA.
+  IMAGE_REPO: ghcr.io/${{ github.repository }}/spring-app
+  IMAGE_TAG: ghcr.io/${{ github.repository }}/spring-app:${{ github.sha }}
+
+permissions:
+  contents: read
+
+jobs:
+  # rules:changes: has no per-job equivalent — this fan-out job computes
+  # flags once and downstream jobs gate on them via `if:`. `app` mirrors
+  # the test/scan filters; `build` adds the root Dockerfile like
+  # build-kaniko.yml's rules do.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      build: ${{ steps.filter.outputs.build }}
+      chart: ${{ steps.filter.outputs.chart }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            app:
+              - 'app/**/*'
+            build:
+              - 'app/**/*'
+              - 'Dockerfile'
+            chart:
+              - 'chart/spring-app/**/*'
+
+  # GitLab Secret-Detection template include → gitleaks. Runs on every
+  # pipeline, ungated by path changes — same as the template.
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks scans history, not just the tree
+      - uses: gitleaks/gitleaks-action@v2
+
+  test:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    uses: ./.github/workflows/reusable-test.yml
+    permissions:
+      contents: read
+      checks: write  # dorny/test-reporter publishes the JUnit check run
+
+  build:
+    needs: [changes, test]
+    # needs:optional:true → the "|| skipped" clause: a Dockerfile-only
+    # change builds without a test job in the run. Without always(), a
+    # skipped need would implicitly skip this job.
+    if: >-
+      always() &&
+      needs.changes.outputs.build == 'true' &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped')
+    uses: ./.github/workflows/reusable-build.yml
+    permissions:
+      contents: read
+      packages: write  # push to ghcr.io — the CI_REGISTRY_* equivalent
+    with:
+      image-tag: ${{ env.IMAGE_TAG }}
+
+  security:
+    needs: [changes, build]
+    # always() so scan-config still runs when build was skipped or
+    # failed — it never needed the image, matching security.yml.
+    if: >-
+      always() &&
+      (needs.changes.outputs.app == 'true' ||
+       needs.changes.outputs.build == 'true' ||
+       needs.changes.outputs.chart == 'true')
+    uses: ./.github/workflows/reusable-security.yml
+    permissions:
+      contents: read
+      packages: write    # cosign pushes signatures to ghcr
+      id-token: write    # keyless cosign — the id_tokens: SIGSTORE_ID_TOKEN equivalent
+    with:
+      image-tag: ${{ env.IMAGE_TAG }}
+      build-ok: ${{ needs.build.result == 'success' }}
+      build-changed: ${{ needs.changes.outputs.build == 'true' }}
+      app-or-chart-changed: >-
+        ${{ needs.changes.outputs.app == 'true' ||
+            needs.changes.outputs.chart == 'true' }}
+      is-default-branch: ${{ github.ref == 'refs/heads/main' }}
+
+  package:
+    needs: [changes, build]
+    # needs:optional → runs on chart-only changes with no image build;
+    # still blocked when a build ran and failed.
+    if: >-
+      always() &&
+      (needs.changes.outputs.app == 'true' || needs.changes.outputs.chart == 'true') &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped')
+    uses: ./.github/workflows/reusable-package.yml
+    with:
+      chart-dir: ${{ env.CHART_DIR }}
+
+  deploy-dev:
+    needs: [changes, package, security]
+    # Both needs are "optional" in GitLab: package must not have failed
+    # (it may be absent), and security must not have failed — a failed
+    # trivy-image scan blocks deploys; an absent one doesn't.
+    if: >-
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      (needs.changes.outputs.app == 'true' || needs.changes.outputs.chart == 'true') &&
+      (needs.package.result == 'success' || needs.package.result == 'skipped') &&
+      (needs.security.result == 'success' || needs.security.result == 'skipped')
+    uses: ./.github/workflows/reusable-deploy.yml
+    secrets: inherit
+    with:
+      environment: dev
+      namespace: dev
+      values-file: ${{ env.CHART_DIR }}/values-dev.yaml
+      image-repo: ${{ env.IMAGE_REPO }}
+      image-tag: ${{ github.sha }}
+      wait-timeout: 3m
+
+  deploy-prod:
+    needs: [changes, package, security]
+    # when:manual → the prod environment's required reviewers (configure
+    # under Settings → Environments). The job sits "Waiting" until a
+    # reviewer approves.
+    if: >-
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      (needs.changes.outputs.app == 'true' || needs.changes.outputs.chart == 'true') &&
+      (needs.package.result == 'success' || needs.package.result == 'skipped') &&
+      (needs.security.result == 'success' || needs.security.result == 'skipped')
+    uses: ./.github/workflows/reusable-deploy.yml
+    secrets: inherit
+    with:
+      environment: prod
+      namespace: prod
+      values-file: ${{ env.CHART_DIR }}/values-prod.yaml
+      image-repo: ${{ env.IMAGE_REPO }}
+      image-tag: ${{ github.sha }}
+      wait-timeout: 5m

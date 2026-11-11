@@ -1,0 +1,70 @@
+# Reusable: deploy — helm upgrade to a namespace. Port of the
+# .deploy-base anchor in .gitlab/ci/deploy.yml, parameterized with
+# typed inputs instead of a YAML merge.
+#
+# Prereq (one-time, repo Settings → Secrets and variables → Actions):
+#   KUBECONFIG_DATA — base64-encoded kubeconfig for the target cluster.
+#   Scope it to the dev/prod *environments* (Settings → Environments) to
+#   get GitLab's "protected variable" semantics: prod's value is only
+#   exposed to jobs deploying to prod.
+
+name: reusable-deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      namespace:
+        required: true
+        type: string
+      values-file:
+        required: true
+        type: string
+      image-repo:
+        required: true
+        type: string
+      image-tag:
+        required: true
+        type: string
+      wait-timeout:
+        required: true
+        type: string
+    secrets:
+      KUBECONFIG_DATA:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    # resource_group: prod → concurrency — serializes deploys per env
+    # (dev deploys can't overlap dev deploys, prod can't overlap prod).
+    concurrency: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The chart-tgz artifact uploaded by reusable-package.yml
+      - uses: actions/download-artifact@v4
+        with:
+          name: chart-tgz
+          path: dist
+
+      - uses: azure/setup-helm@v4
+
+      # before_script: kubeconfig decode — identical to the GitLab job
+      - run: |
+          mkdir -p ~/.kube
+          echo "${KUBECONFIG_DATA}" | base64 -d > ~/.kube/config
+          kubectl version --output=yaml || true
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_DATA }}
+
+      - run: >-
+          helm upgrade --install spring-app dist/spring-app-*.tgz
+          --namespace ${{ inputs.namespace }} --create-namespace
+          -f ${{ inputs.values-file }}
+          --set image.repository=${{ inputs.image-repo }}
+          --set image.tag=${{ inputs.image-tag }}
+          --wait --timeout ${{ inputs.wait-timeout }}

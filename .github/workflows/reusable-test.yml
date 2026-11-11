@@ -1,0 +1,40 @@
+# Reusable: test — Maven unit tests with dependency caching and JUnit
+# reports. Port of .gitlab/ci/test.yml.
+
+name: reusable-test
+
+on:
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # image: maven:3.9-eclipse-temurin-17 → setup-java on the runner.
+      # cache: maven replaces the .m2/repository cache block.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - run: mvn -B test
+        working-directory: app
+
+      # artifacts:reports:junit → a check run on the commit/PR plus the
+      # raw reports kept as a downloadable artifact (expire_in: 1 week).
+      - uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: maven-tests
+          path: app/target/surefire-reports/TEST-*.xml
+          reporter: java-junit
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: surefire-reports
+          path: app/target/surefire-reports/
+          retention-days: 7

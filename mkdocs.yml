@@ -82,3 +82,4 @@ nav:
   - "5. Reusable pipelines": 05-reusable-pipelines.md
   - "6. Deploy to Kubernetes": 06-deploy-to-k8s.md
   - "7. Capstone — the full loop": 07-capstone.md
+  - "8. Porting to GitHub Actions": 08-gitlab-to-github-actions.md

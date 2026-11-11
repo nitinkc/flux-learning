@@ -1,0 +1,91 @@
+# Reusable: security — the supply-chain gates between build and deploy.
+# Port of .gitlab/ci/security.yml.
+#
+# Gates:
+#   scan-image   — CRITICAL vulns in the built image = run fails
+#   scan-config  — IaC misconfig + secret scan (advisory)
+#   secrets-scan — gitleaks, lives in ci.yml so it runs on every pipeline
+#   sign         — keyless cosign via the job's OIDC identity
+
+name: reusable-security
+
+on:
+  workflow_call:
+    inputs:
+      image-tag:
+        required: true
+        type: string
+      build-ok:
+        required: true
+        type: boolean
+      build-changed:
+        required: true
+        type: boolean
+      app-or-chart-changed:
+        required: true
+        type: boolean
+      is-default-branch:
+        required: true
+        type: boolean
+
+jobs:
+  # needs: ["build:kaniko"] → build-ok input (the caller's build result)
+  scan-image:
+    if: inputs.build-changed && inputs.build-ok
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ inputs.image-tag }}
+          severity: CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+
+  # allow_failure: true → continue-on-error — findings print, run continues
+  scan-config:
+    if: inputs.app-or-chart-changed
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: chart/spring-app
+          severity: HIGH,CRITICAL
+
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: secret
+          scan-ref: app
+          severity: HIGH,CRITICAL
+
+  # id_tokens: SIGSTORE_ID_TOKEN → permissions: id-token: write (granted
+  # on the caller job). deploy:* jobs transitively need this through the
+  # caller's needs chain, so nothing unsigned reaches a namespace.
+  sign:
+    needs: scan-image
+    if: inputs.is-default-branch && inputs.build-ok && inputs.build-changed
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: sigstore/cosign-installer@v3
+
+      - run: cosign sign --yes "${{ inputs.image-tag }}"

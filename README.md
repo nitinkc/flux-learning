@@ -21,7 +21,9 @@ plus the GitOps (`HelmRelease`) alternative.
 │   ├── build-kaniko.yml    #   build:kaniko → project container registry
 │   ├── package-chart.yml   #   chart:package → dist/*.tgz artifact
 │   └── deploy.yml          #   deploy:dev (auto) · deploy:prod (manual) · rollback:prod
-└── docs/                   # six-lesson course (mkdocs site)
+├── .github/workflows/      # GitHub Actions port — ci.yml + reusable-*.yml
+│                           #   (see docs/08-gitlab-to-github-actions.md)
+└── docs/                   # eight-lesson course (mkdocs site)
 ```
 
 ## Quick start
@@ -49,7 +51,7 @@ mkdocs serve   # http://localhost:8000
 ```
 
 Lesson order: pipeline anatomy → kaniko builds → auth/OIDC → environments &
-gates → reusable pipelines → k8s deploys & rollback.
+gates → reusable pipelines → k8s deploys & rollback → GitHub Actions port.
 
 ## Pairs with
 
