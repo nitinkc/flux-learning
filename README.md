@@ -42,7 +42,9 @@ glab ci lint .gitlab-ci.yml
 ## Docs site
 
 ```bash
-pip install -r requirements.txt
+uv venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
 mkdocs serve   # http://localhost:8000
 ```
 
