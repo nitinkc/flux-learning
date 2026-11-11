@@ -28,6 +28,7 @@ mapping table that explains it.
 | `allow_failure: true` | `continue-on-error: true` |
 | kaniko executor image | `docker/build-push-action` — runners have a daemon, no kaniko needed |
 | protected CI variable | environment-scoped secret |
+| `pages:` job (GitLab Pages) | `actions/upload-pages-artifact` + `actions/deploy-pages` |
 
 ## File-for-file
 
@@ -39,7 +40,14 @@ mapping table that explains it.
 .gitlab/ci/package-chart.yml    →  .github/workflows/reusable-package.yml
 .gitlab/ci/deploy.yml           →  .github/workflows/reusable-deploy.yml
                                    .github/workflows/rollback.yml
+(a pages: job, if one existed)  →  .github/workflows/docs.yml
 ```
+
+`docs.yml` is a *separate* workflow, not a caller in `ci.yml` — on purpose.
+The docs site has its own change filter (`docs/**`), its own concurrency
+group (`pages` allows one deployment at a time), and its own permissions
+(`pages: write`). Not everything belongs in one pipeline; trigger-scoped
+`paths:` is the native way to say "only run when these files change."
 
 The `.deploy-base` anchor becomes a single parameterized reusable
 workflow: `deploy-dev` and `deploy-prod` are two *call sites* passing

@@ -1,0 +1,63 @@
+# docs — build the mkdocs site on every docs-touching run, publish to
+# GitHub Pages from the default branch.
+#
+# GitLab equivalent would be a `pages:` job shipping site/ as a public
+# artifact; GitHub splits it into upload-pages-artifact + deploy-pages.
+#
+# Prereq (one-time): Settings → Pages → Source = "GitHub Actions".
+
+name: docs
+
+on:
+  pull_request:
+    paths: ['docs/**', 'mkdocs.yml', 'requirements.txt']
+  push:
+    branches: [main]
+    paths: ['docs/**', 'mkdocs.yml', 'requirements.txt']
+  workflow_dispatch:  # manual republish, like retrying a pages job
+
+# Pages allows one deployment at a time — serialize, don't cancel
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: uv pip install --system -r requirements.txt
+
+      # --strict: a broken docs change fails the pipeline, not the site
+      - run: mkdocs build --strict
+
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          path: site/
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

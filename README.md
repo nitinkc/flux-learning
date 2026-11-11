@@ -22,6 +22,7 @@ plus the GitOps (`HelmRelease`) alternative.
 │   ├── package-chart.yml   #   chart:package → dist/*.tgz artifact
 │   └── deploy.yml          #   deploy:dev (auto) · deploy:prod (manual) · rollback:prod
 ├── .github/workflows/      # GitHub Actions port — ci.yml + reusable-*.yml
+│                           #   + docs.yml (mkdocs → GitHub Pages)
 │                           #   (see docs/08-gitlab-to-github-actions.md)
 └── docs/                   # eight-lesson course (mkdocs site)
 ```
