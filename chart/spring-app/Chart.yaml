@@ -1,0 +1,6 @@
+apiVersion: v2
+name: spring-app
+description: Minimal Spring Boot service for the GitLab CI/CD lab
+type: application
+version: 0.1.0
+appVersion: "0.0.1"

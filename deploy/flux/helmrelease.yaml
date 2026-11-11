@@ -1,0 +1,31 @@
+# GitOps alternative to the push-based `deploy:*` jobs.
+#
+# Instead of running `helm upgrade` from CI, commit a HelmRelease like this
+# to your Flux release repo (or this repo watched by a GitRepository source).
+# Flux then reconciles the release continuously — CI's only job becomes
+# building, testing, and publishing the chart/image.
+#
+# Pair with a HelmChart source pointing at this chart, e.g. via a
+# GitRepository + HelmChart kind, or an OCIRepository if the chart is pushed
+# to an OCI registry (see HelmCharts/docs/solutions/helm-oci.md).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: spring-app
+  namespace: dev
+spec:
+  interval: 1m
+  chart:
+    spec:
+      chart: ./chart/spring-app
+      sourceRef:
+        kind: GitRepository
+        name: spring-app
+        namespace: flux-system
+      interval: 1m
+  values:
+    image:
+      repository: registry.example.com/spring-app
+      tag: "0.0.1"
+    env:
+      APP_MESSAGE: "hello from spring-app (via flux)"

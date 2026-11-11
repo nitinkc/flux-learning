@@ -1,0 +1,84 @@
+site_name: GitLab CI/CD & GitOps
+site_description: From template to production pipeline — GitLab CI, kaniko, environments, deploys
+site_author: Nitin Kumar Chaurasia
+repo_url: https://gitlab.com/grp-flux/gitlab-spring-app-flux
+repo_name: grp-flux/gitlab-spring-app-flux
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: en
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+plugins:
+  - search
+  - mermaid2:
+      version: 10.9.3
+      arguments:
+        theme: neutral
+  - glightbox
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mermaid2.fence_mermaid_custom
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.keys
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+      toc_depth: 3
+
+nav:
+  - Home: index.md
+  - "1. Pipeline anatomy": 01-pipeline-anatomy.md
+  - "2. Container builds (kaniko)": 02-container-builds.md
+  - "3. Auth & identity": 03-auth-and-identity.md
+  - "4. Environments & gates": 04-environments-and-gates.md
+  - "5. Reusable pipelines": 05-reusable-pipelines.md
+  - "6. Deploy to Kubernetes": 06-deploy-to-k8s.md
+  - "7. Capstone — the full loop": 07-capstone.md

@@ -1,0 +1,76 @@
+# Stage: deploy — helm upgrade to dev automatically on the default branch
+# when deployable inputs changed, prod behind a manual approval, plus an
+# always-available rollback job.
+#
+# Prereq (one-time, project settings → CI/CD → Variables):
+#   KUBECONFIG_DATA — base64-encoded kubeconfig for the target cluster,
+#   masked + protected. See docs/03-auth-and-identity.md for the GitLab
+#   agent alternative.
+
+.deploy-base: &deploy-base
+  stage: deploy
+  needs:
+    - job: chart:package
+      optional: true   # rollback must exist even on commits that produced no chart
+    - job: scan:trivy-image
+      optional: true   # if a scan ran and failed, deploys are blocked; if no
+                       # image was built (chart-only change), nothing to scan
+  image:
+    name: alpine/k8s:1.31.2
+    entrypoint: [""]
+  before_script:
+    - mkdir -p ~/.kube
+    - echo "${KUBECONFIG_DATA}" | base64 -d > ~/.kube/config
+    - kubectl version --output=yaml || true
+
+deploy:dev:
+  <<: *deploy-base
+  environment:
+    name: dev
+  script:
+    - helm upgrade --install spring-app "dist/spring-app-*.tgz"
+      --namespace dev --create-namespace
+      -f ${CHART_DIR}/values-dev.yaml
+      --set image.repository=${CI_REGISTRY_IMAGE}/spring-app
+      --set image.tag=${CI_COMMIT_SHORT_SHA}
+      --wait --timeout 3m
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - ${APP_DIR}/**/*
+        - ${CHART_DIR}/**/*
+    - when: never
+
+deploy:prod:
+  <<: *deploy-base
+  environment:
+    name: prod
+  resource_group: prod
+  script:
+    - helm upgrade --install spring-app "dist/spring-app-*.tgz"
+      --namespace prod --create-namespace
+      -f ${CHART_DIR}/values-prod.yaml
+      --set image.repository=${CI_REGISTRY_IMAGE}/spring-app
+      --set image.tag=${CI_COMMIT_SHORT_SHA}
+      --wait --timeout 5m
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - ${APP_DIR}/**/*
+        - ${CHART_DIR}/**/*
+      when: manual
+    - when: never
+
+rollback:prod:
+  <<: *deploy-base
+  environment:
+    name: prod
+  resource_group: prod
+  script:
+    - helm history spring-app --namespace prod
+    - helm rollback spring-app --namespace prod --wait
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+      allow_failure: true
+    - when: never

@@ -1,0 +1,63 @@
+# Stage: security — the supply-chain gates between build and deploy.
+# Companion lesson: DockerConcepts docs/07-supply-chain-security.md
+#
+# Gates:
+#   scan:trivy-image   — CRITICAL vulns in the built image = pipeline fails
+#   scan:trivy-config  — IaC misconfig in the chart/repo
+#   secrets detection  — GitLab Secret-Detection template, included in the
+#                        root .gitlab-ci.yml (runs on every pipeline)
+#   sign:cosign        — keyless signature via the job's OIDC identity;
+#                        deploy:* jobs `need` the scan, so nothing unsigned/
+#                        unscanned reaches a namespace.
+
+scan:trivy-image:
+  stage: security
+  needs: ["build:kaniko"]
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  script:
+    - trivy image --severity CRITICAL --exit-code 1 --ignore-unfixed
+      --registry-username "$CI_REGISTRY_USER"
+      --registry-password "$CI_REGISTRY_PASSWORD"
+      "$IMAGE_TAG"
+  rules:
+    - changes:
+        - ${APP_DIR}/**/*
+        - ${APP_DIR}/Dockerfile
+
+scan:trivy-config:
+  stage: security
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  script:
+    - trivy config --severity HIGH,CRITICAL ${CHART_DIR}
+    - trivy fs --scanners secret --severity HIGH,CRITICAL ${APP_DIR}
+  rules:
+    - changes:
+        - ${CHART_DIR}/**/*
+        - ${APP_DIR}/**/*
+      allow_failure: true   # advisory: findings print, pipeline continues
+    - when: never
+
+sign:cosign:
+  stage: security
+  needs: ["build:kaniko", "scan:trivy-image"]
+  image:
+    name: cgr.dev/chainguard/cosign:latest
+    entrypoint: [""]
+  id_tokens:
+    SIGSTORE_ID_TOKEN:
+      aud: sigstore          # the job's OIDC identity — this IS the signer
+  script:
+    - cosign sign --yes
+      --registry-username "$CI_REGISTRY_USER"
+      --registry-password "$CI_REGISTRY_PASSWORD"
+      "$IMAGE_TAG"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - ${APP_DIR}/**/*
+        - ${APP_DIR}/Dockerfile
+    - when: never

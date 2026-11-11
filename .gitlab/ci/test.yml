@@ -1,0 +1,21 @@
+# Stage: test — Maven unit tests with dependency caching and JUnit reports.
+
+maven:test:
+  stage: test
+  image: maven:3.9-eclipse-temurin-17
+  script:
+    - mvn -B test
+  variables:
+    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  cache:
+    key: maven-repo
+    paths:
+      - .m2/repository
+  artifacts:
+    when: always
+    reports:
+      junit: ${APP_DIR}/target/surefire-reports/TEST-*.xml
+    expire_in: 1 week
+  rules:
+    - changes:
+        - ${APP_DIR}/**/*

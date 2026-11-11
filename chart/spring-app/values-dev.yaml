@@ -1,0 +1,7 @@
+replicaCount: 1
+
+env:
+  APP_MESSAGE: "hello from spring-app (dev)"
+
+autoscaling:
+  enabled: false

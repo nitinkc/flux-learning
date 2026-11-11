@@ -1,0 +1,27 @@
+# Stage: build — rootless image build with kaniko, pushed to the project
+# container registry. No privileged daemon, no dind service.
+#
+# CI_REGISTRY_USER / CI_REGISTRY_PASSWORD / CI_REGISTRY_IMAGE are predefined
+# GitLab variables — nothing to configure for the built-in registry.
+
+build:kaniko:
+  stage: build
+  needs:
+    - job: maven:test
+      optional: true   # Dockerfile-only change: build runs without the test job existing
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker
+    - |
+      echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}/${APP_DIR}"
+      --dockerfile "${CI_PROJECT_DIR}/${APP_DIR}/Dockerfile"
+      --destination "${IMAGE_TAG}"
+  rules:
+    - changes:
+        - ${APP_DIR}/**/*
+        - Dockerfile
+        - ${APP_DIR}/Dockerfile

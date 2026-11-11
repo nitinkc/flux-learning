@@ -1,0 +1,33 @@
+replicaCount: 1
+
+image:
+  repository: ""          # set by CI: $CI_REGISTRY_IMAGE
+  tag: ""                 # set by CI: $CI_COMMIT_SHORT_SHA
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+env:
+  APP_MESSAGE: "hello from spring-app"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
